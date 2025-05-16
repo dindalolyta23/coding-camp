@@ -1,6 +1,8 @@
 import api from "../data/api";
 import { storyDB } from "../data/idb";
 
+const VAPID_KEY = "BCCs2eonMI-6H2ctvFaWg-UYdDv387Vno_bzUzALpB442r2lCnsHmtrx8biyPi_E-1fSGABK_Qs_GlvPoJJqxbk";
+
 export default class HomePresenter {
   constructor(view) {
     this.view = view;
@@ -19,7 +21,6 @@ export default class HomePresenter {
       const token = localStorage.getItem("token");
 
       if (!token) {
-        // Jika tidak ada token, coba ambil data offline
         const offlineStories = await storyDB.getAllStories();
         if (offlineStories.length > 0) {
           this.view.displayStories(offlineStories);
@@ -39,12 +40,11 @@ export default class HomePresenter {
 
         this.handleResponse(response);
 
-        // Simpan data ke IndexedDB untuk akses offline
         if (response.listStory) {
           response.listStory.forEach((story) => {
             storyDB.saveStory({
               ...story,
-              id: story.id || story.createdAt, // fallback ID
+              id: story.id || story.createdAt,
             });
           });
         }
@@ -80,38 +80,62 @@ export default class HomePresenter {
   }
 
   async initializePushNotifications() {
-    if ("serviceWorker" in navigator && "PushManager" in window) {
-      try {
-        const registration = await navigator.serviceWorker.register("/sw.js");
-        const permission = await Notification.requestPermission();
+    if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
+      this.view.showError("Browser tidak mendukung push notification");
+      return;
+    }
 
-        if (permission === "granted") {
+    try {
+      const registration = await navigator.serviceWorker.register("/sw.js", { scope: "/" });
+      const permission = await Notification.requestPermission();
+
+      switch (permission) {
+        case "granted":
           const subscription = await registration.pushManager.subscribe({
             userVisibleOnly: true,
-            applicationServerKey:
-              "BCCs2eonMI-6H2ctvFaWg-UYdDv387Vno_bzUzALpB442r2lCnsHmtrx8biyPi_E-1fSGABK_Qs_GlvPoJJqxbk",
+            applicationServerKey: this.urlBase64ToUint8Array(VAPID_KEY),
           });
-
           await this.handleSubscription(subscription);
-        }
-      } catch (error) {
-        console.error("Push notification initialization failed:", error);
+          break;
+
+        case "denied":
+          this.view.showError("Izin notifikasi ditolak. Silakan aktifkan manual.");
+          break;
+
+        default:
+          console.log("Izin notifikasi ditunda");
       }
+    } catch (error) {
+      console.error("Push notification error:", error);
+      this.view.showError("Gagal mengaktifkan notifikasi");
     }
   }
 
   async handleSubscription(subscription) {
     try {
-      await api.subscribeNotification({
-        token: localStorage.getItem("token"),
+      const token = localStorage.getItem("token");
+      if (!token) throw new Error("User not logged in");
+
+      const response = await api.subscribeNotification({
+        token,
         endpoint: subscription.endpoint,
-        keys: {
-          p256dh: subscription.keys.p256dh,
-          auth: subscription.keys.auth,
-        },
+        keys: subscription.toJSON().keys,
       });
+
+      if (response.error) throw new Error(response.message);
+
+      console.log("Berhasil subscribe:", response);
     } catch (error) {
       console.error("Subscription error:", error);
+      await subscription.unsubscribe(); // rollback jika gagal
+      throw error;
     }
+  }
+
+  urlBase64ToUint8Array(base64String) {
+    const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
+    const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+    const rawData = window.atob(base64);
+    return Uint8Array.from([...rawData].map((char) => char.charCodeAt(0)));
   }
 }
