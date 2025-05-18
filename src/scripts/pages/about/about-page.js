@@ -8,7 +8,7 @@ export default class AboutPage {
           <div class="bio-item">
             <i data-feather="user"></i>
             <span class="bio-label">Nama :</span>
-            <span class="bio-value">Taufiq Hidayatullah</span>
+            <span class="bio-value">Dinda Lolyta Buma Lestari</span>
           </div>
 
           <div class="bio-item">
@@ -26,7 +26,7 @@ export default class AboutPage {
           <div class="bio-item">
             <i data-feather="heart"></i>
             <span class="bio-label">Minat :</span>
-            <span class="bio-value">Web Development, Data Mining</span>
+            <span class="bio-value">Web Development, Data Mining, UI/UX</span>
           </div>
         </div>
       </section>
